@@ -6,3 +6,7 @@ ijson
 accelerate
 einops
 bitsandbytes
+datasets
+wandb
+onnx
+python-dotenv
