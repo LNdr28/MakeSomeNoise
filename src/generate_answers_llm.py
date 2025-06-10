@@ -193,7 +193,7 @@ def main():
     print("Loading LLM...")
     llm_id = args.llm_id
     llm = LLM(
-        llm_id, device, quantization_bits=None,
+        llm_id, device, quantization_bits=4,
         model_max_length=args.model_max_length
     )
     tokenizer = llm.tokenizer
