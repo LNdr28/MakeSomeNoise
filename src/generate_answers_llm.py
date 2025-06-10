@@ -34,6 +34,7 @@ def parse_arguments():
     parser.add_argument('--load_full_corpus', type=str2bool, help='Load the full corpus', default=True)    
     parser.add_argument('--use_random', type=str2bool, help='Use random irrelevant documents')
     parser.add_argument('--use_adore', type=str2bool, help="Use the retrieved documents from ADORE", default=False)
+    parser.add_argument('--search_results', type=str, help="Path to a search results file to use. It overwrites the other search result flags. (--use_random, --use_adore) if given. If given must use load full corpus as we did not compute corpus subsets.")
     parser.add_argument('--gold_position', type=int, help='The (0-indexed) position of the gold document in the context')
     parser.add_argument('--num_documents_in_context', type=int, help='Total number of documents in the context')
     parser.add_argument('--get_documents_without_answer', type=str2bool, help='Select only documents without the answer (e.g., distracting)', default=True)
@@ -76,7 +77,11 @@ def load_corpus(
 
 def load_search_results(args: argparse.Namespace) -> List[Tuple[List[int], List[float]]]:
     # Decide on search results path based on conditions
-    if args.use_random:
+    if args.search_results is not None:
+        assert os.path.exists(args.search_results), f"Search results file {args.search_results} does not exist."
+        assert os.path.isfile(args.search_results), f"Search results file {args.search_results} is not a file."
+        search_results_path = args.search_results
+    elif args.use_random:
         search_results_path = info['random_results_path']
     elif args.use_adore:
         search_results_path = info['adore_search_results_path']
@@ -123,6 +128,7 @@ def print_info(args: argparse.Namespace):
     print("INFO:")
     print(f"DATA: {info['data_path']}")
     print(f"MODEL: {args.llm_id}")
+    print(f"Custom search results file?(overwrites use_random, use_adore and doesnt use contriever results): {args.search_results}")
     print(f"USE RANDOM IN CONTEXT: {args.use_random}")
     print(f"USE ADORE: {args.use_adore}")
     print(f"GOLD POSITION: {args.gold_position}")
@@ -187,7 +193,7 @@ def main():
     print("Loading LLM...")
     llm_id = args.llm_id
     llm = LLM(
-        llm_id, device, quantization_bits=4, 
+        llm_id, device, quantization_bits=None,
         model_max_length=args.model_max_length
     )
     tokenizer = llm.tokenizer
