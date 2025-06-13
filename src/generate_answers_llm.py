@@ -148,7 +148,7 @@ def generate_and_save(
     num_doc = args.num_documents_in_context
     save_every = args.save_every
     gold_pos = args.gold_position
-    retriever_str = "adore" if args.use_adore else "contriever"
+    retriever_str = "adore" if args.use_adore else "contriever" # TODO: add bm25 as retriever output path possibility
     rand_str = "_rand" if args.use_random else ""
     answerless_str = "_answerless" if args.get_documents_without_answer else ""
 
