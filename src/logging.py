@@ -1,3 +1,9 @@
+"""
+Helper functions for logging to wandb. Support for streamlined logging with tags and enum values.
+We added as much functionality to support our noise benchmark runs as well as the training runs we want to track.
+It does not cover accurate settings tracking for the full repository.
+"""
+
 from dataclasses import dataclass, asdict
 
 import wandb
@@ -36,6 +42,7 @@ class Tag(str, Enum):
     OPEN_BOOK = "open_book"
     FINE_TUNE = "fine_tune"
     FULL_TRAIN = "full_train"
+    TARGETED_NOISE_EXPERIMENT='is_targeted_noise_experiment'
 
 
 @dataclass
@@ -48,8 +55,9 @@ class RunConfig:
     model_llm: str  # is a huggingface model id as string, thus strict/consistent format kind of guaranteed
     model_retriever: Retriever
     seed: str  # random seed
-
-    # TODO: add benchmark confs:  gold doc position, num docs, use random irrelevant docs, etc....
+    num_docs_in_context: int
+    pos_gold_doc_in_context: int
+    data_path: str
 
     def to_dict(self):
         kwargs = asdict(self)
