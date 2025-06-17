@@ -1,14 +1,16 @@
+import random
 import re
 import string
 from typing import List, Tuple
 
 from tokenizers import normalizers, Regex
 from tokenizers.normalizers import Sequence, Replace, Lowercase
+from tqdm import tqdm
 from transformers import AutoTokenizer
 
-from src.normalize_text import CONTROLS, HYPHENS, MINUSES, DOUBLE_QUOTES, SINGLE_QUOTES, APOSTROPHES, ACCENTS, SLASHES, \
+from normalize_text import CONTROLS, HYPHENS, MINUSES, DOUBLE_QUOTES, SINGLE_QUOTES, APOSTROPHES, ACCENTS, SLASHES, \
     TILDES
-from src.utils import read_json
+from utils import read_json
 
 
 # TODO:
@@ -100,6 +102,7 @@ class OffsetNormalizer:
 
         tokenizer.backend_tokenizer.normalizer = normalizer
         self.tokenizer = tokenizer
+        # print(self.tokenizer)
 
     def normalize(self, text):
         tokenized_text = self.tokenizer(text=text, return_offsets_mapping=True, return_tensors=None)
@@ -145,32 +148,33 @@ class OffsetNormalizer:
         print(f"Total differences: {len(differences)}")
         return differences
 
+    def tokens_no_UNK_mapping(self, text_indices, normalized_text_indices):
+        filtered_text_indices = [idx for idx in text_indices if idx != self.tokenizer.unk_token_id]
+        assert filtered_text_indices == normalized_text_indices
+        norm_to_orig_tokens = []
+        norm_idx = 0
+        idx = 0
+        while idx < len(text_indices):
+            while idx < len(text_indices) and text_indices[idx] == self.tokenizer.unk_token_id:
+                idx += 1
 
-    # def tokenize_no_unk(self, text):
-    #     # Method 1: Test what causes UNK tokens
-    #     tokenized_text = self.tokenizer(text=text, return_offsets_mapping=True, return_tensors=None)
-    #     text_offsets = tokenized_text['offset_mapping']
-    #     text_indices = tokenized_text['input_ids']
-    #     unk_token_id = self.tokenizer.unk_token_id
-    #
-    #     if unk_token_id not in text_indices:
-    #         return text  # no UNK tokens, text is fine
-    #
-    #     # otherwise we need to find what symbol is causing it
-    #     cleaned_chars = []
-    #     for char in text:
-    #         # Test if this character alone would create UNK
-    #         char_tokens = self.tokenizer(char, return_tensors=None)['input_ids']
-    #         if unk_token_id in char_tokens:
-    #             # Replace problematic character with space NOT changing the text length (important for mapping back)
-    #             cleaned_chars.append(' ')
-    #         else:
-    #             cleaned_chars.append(char)
-    #
-    #
-    #     return cleaned_text
+            if idx == len(text_indices):
+                break
 
-    def find_in_normalized(self, text: str, substring: str) -> List[Tuple[int, int]]:
+            # here i know that text_indices[idx] is not UKN
+            assert text_indices[idx] == normalized_text_indices[norm_idx], f"{idx}: {text_indices[idx]}, {normalized_text_indices[norm_idx]}"
+            norm_to_orig_tokens.append(idx)
+            idx += 1
+            norm_idx += 1
+
+        assert len(norm_to_orig_tokens) == len(normalized_text_indices)
+        return norm_to_orig_tokens
+
+    def find_in_non_normalized(self, text: str, substring: str) -> List[Tuple[int, int]]:
+        found_text_indices = [(m.start(), m.end()) for m in re.finditer(re.escape(substring), text)]
+        return found_text_indices
+
+    def find_in_normalized(self, text: str, substrings: List[str]) -> List[List[Tuple[int, int]]]:
         # we now have the mapping text <-> tokens
         tokenized_text = self.tokenizer(text=text, return_offsets_mapping=True, return_tensors=None, add_special_tokens=False)
         text_offsets = tokenized_text['offset_mapping']
@@ -182,55 +186,70 @@ class OffsetNormalizer:
         normalized_text_offsets = tokenized_normalized_text['offset_mapping']
         normalized_text_indices = tokenized_normalized_text['input_ids']
 
-        # since the tokens are the same, we now have text <-> tokens <-> normalized_text
-        # todo: move it to an error field to not throw exception while processing a big batch
-        self.find_list_dif(text, normalized_text, text_indices, normalized_text_indices, text_offsets, normalized_text_offsets)
-        assert text_indices == normalized_text_indices
+        # since the tokens are the same (without UNK), we now have text <-> tokens <-> normalized_text
+        norm_to_orig_tokens = self.tokens_no_UNK_mapping(text_indices, normalized_text_indices)
 
-        tokenized_substring = self.tokenizer(text=substring, return_offsets_mapping=True, return_tensors=None, add_special_tokens=False)
-        normalized_substring = self.tokenizer.decode(tokenized_substring['input_ids'], skip_special_tokens=True)
+        found_text_indices = []
 
-        print(f"Normalized substring: {normalized_substring}")
+        for substring in substrings:
+            tokenized_substring = self.tokenizer(text=substring, return_offsets_mapping=True, return_tensors=None, add_special_tokens=False)
+            normalized_substring = self.tokenizer.decode(tokenized_substring['input_ids'], skip_special_tokens=True)
 
-        # build map from normalized char index to token index
-        token_strings = [self.tokenizer.decode([idx], skip_special_tokens=True) for idx in text_indices]
+            # print(f"Normalized substring: {normalized_substring}")
+            if normalized_substring == '':
+                orig_text_indices = self.find_in_non_normalized(text, substring)
+                found_text_indices.append(orig_text_indices)
+                continue
 
-        normalized_text_indices = [(m.start(), m.end()) for m in re.finditer(re.escape(normalized_substring), normalized_text)]
-        orig_text_indices = []
+            found_normalized_text_indices = [(m.start(), m.end()) for m in re.finditer(re.escape(normalized_substring), normalized_text)]
+            orig_text_indices = []
 
-        for substring_start, substring_end in normalized_text_indices:
-            print(substring_start, substring_end, len(normalized_text))
-            print("Found normalised substring: " + normalized_text[substring_start:substring_end])
-            start_token_idx = tokenized_normalized_text.char_to_token(substring_start)
-            end_token_idx = tokenized_normalized_text.char_to_token(substring_end)
-            # could be an issue that substring_end points at a whitespace so there is actually no token at that place
-            # in that case, it will return None
-            # we then go left until there is some token (should work)
-            while end_token_idx is None:
-                substring_end -= 1
-                end_token_idx = tokenized_normalized_text.char_to_token(substring_end)
+            for substring_start, substring_end in found_normalized_text_indices:
+                # print(substring_start, substring_end, len(normalized_text))
+                # print("Found normalized substring: " + normalized_text[substring_start:substring_end])
+                start_norm_token_idx = tokenized_normalized_text.char_to_token(substring_start)
+                end_norm_token_idx = tokenized_normalized_text.char_to_token(substring_end)
+                # could be an issue that substring_end points at a whitespace so there is actually no token at that place
+                # in that case, it will return None
+                # we then go left until there is some token (should work)
+                while end_norm_token_idx is None:
+                    substring_end -= 1
+                    end_norm_token_idx = tokenized_normalized_text.char_to_token(substring_end)
 
-            print(start_token_idx, end_token_idx)
-            start_char, _ = text_offsets[start_token_idx]
-            _, end_char = text_offsets[end_token_idx]
-            orig_text_indices.append((start_char, end_char))
-            print(f'Non-normalised it was: {text[start_char:end_char]}')
+                # to account for UNK tokens
+                start_token_idx = norm_to_orig_tokens[start_norm_token_idx]
+                end_token_idx = norm_to_orig_tokens[end_norm_token_idx]
 
-        return orig_text_indices
+                # print(start_token_idx, end_token_idx)
+                start_char, _ = text_offsets[start_token_idx]
+                _, end_char = text_offsets[end_token_idx]
+                orig_text_indices.append((start_char, end_char))
+                # print(f'Non-normalised it was: {text[start_char:end_char]}')
+
+            found_text_indices.append(orig_text_indices)
+
+        return found_text_indices
 
 
 
 
 if __name__ == '__main__':
-    idx = 3867
-    example_idx = read_json('../data/csnlp/numdoc7_gold_at6_answerless_info_all_extended.json')[idx]
-    generated_string = example_idx['prompt'] + " " + example_idx['generated_answer']
-    gt_answer = example_idx['answers'][0]
-    # print(generated_string)
+    # idx = 3867
+    # idx = 175
+
+    data = read_json('../data/csnlp/numdoc7_gold_at6_answerless_info_all_extended.json')
     offset_normaliser = OffsetNormalizer()
-    print(f'GT answer: {gt_answer}')
-    indices = offset_normaliser.find_in_normalized(generated_string, gt_answer)
-    # for s, e in indices:
-    #     print(generated_string[s:e])
+
+    random_idx = random.sample(range(0, len(data)), k=10)
+    # checkig that it doesnt have any errors for our dataaa
+    for idx in tqdm(range(len(data))):
+        example_idx = data[idx]
+        generated_string = example_idx['prompt'] + " " + example_idx['generated_answer']
+        gt_answer = example_idx['answers'][0]
+
+        # print(f'GT answers: {example_idx["answers"]}')
+        answer_indices = offset_normaliser.find_in_normalized(generated_string, example_idx['answers'])
+
+
 
 
