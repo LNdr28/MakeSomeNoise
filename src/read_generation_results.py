@@ -7,9 +7,11 @@ import argparse
 import torch
 import pandas as pd
 from typing import List, Dict
+import wandb
 
 from utils import str2bool
 from normalize_answers import *
+from src.logging import load_env, init_wandb, JobType, Dataset, Retriever, RunConfig, Tag
 
 
 
@@ -239,7 +241,9 @@ def parse_arguments():
     parser.add_argument('--num_main_documents', type=int, help='Number of documents in the context from the main corpus')
     parser.add_argument('--num_other_documents', type=int, help='Number of documents in the context from the other corpus')
     parser.add_argument('--put_main_first', type=str2bool, help='Put the documents of the main corpus first in the context')
-    
+    parser.add_argument('--wandb', type=str2bool, help='Use wandb for logging. Make sure .env is configured properly.')
+    parser.add_argument('--wandb_run_name', type=str, help='Name of the wandb run fo logging', default='MyRun')
+    parser.add_argument('--is_tailored_noise_experiment', action='store_true', help='Whether the experiment is tailored noise experiment (noise generated from low score bm25 docs for ex.)')
 
     args = parser.parse_args()
 
@@ -283,6 +287,30 @@ def main():
     directory = f'{args.output_dir}/{llm_folder}/{split}/{prompt_type}/{retriever_str}{doc_str}'
     print("Directory: ", directory)
 
+    # initialize wandb
+    if args.wandb:
+        # We only capture information relevant for our setting: the classic prompt experiment
+        # where the gold document and noise is used in the context.
+        load_env()
+        run_name = args.wandb_run_name
+        run_cfg = RunConfig(dataset=Dataset.WIKIPEDIA2018_NQ_OPEN,
+                            dataset_use_test_set=args.use_test,
+                            dataset_use_train_set=not args.use_test,
+                            prompt_type=args.prompt_type, # for our experiments will always be classic
+                            model_llm=str(llm_id),
+                            model_retriever=Retriever(retriever_str[:-1]),
+                            seed=None,
+                            num_docs_in_context=args.num_documents_in_context,
+                            pos_gold_doc_in_context=args.gold_position,
+                            data_path=directory,
+                            )
+        tags = []
+        if args.is_tailored_noise_experiment:
+            tags.append(Tag.TARGETED_NOISE_EXPERIMENT)
+        notes = "generate accuracy results based on the generated answers of llms with RAG"
+        init_wandb(run_name, JobType.BENCHMARK, run_cfg, tags, notes)
+
+
     data_df = load_pickle_files(directory, filename_prefix)
     data_path = save_data_to_json(data_df, directory, filename_prefix)
     if data_path is None:
@@ -302,7 +330,10 @@ def main():
     results_df = pd.DataFrame(results)
     accuracy = round(results_df['ans_match_after_norm'].sum() / len(results_df), 4)
     print("ACCURACY: ", accuracy)
+    wandb.log({"accuracy": accuracy})
     results_df.to_json(os.path.join(directory, f'{filename_prefix}all_extended.json'), orient='records')
+    # Store results file to wandb
+    wandb.save(os.path.join(directory, f'{filename_prefix}all_extended.json'))
 
 
 if __name__ == "__main__":
