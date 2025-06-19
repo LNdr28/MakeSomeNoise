@@ -115,7 +115,8 @@ def fill_position_stats(entry: dict, entry_stats: dict, output_tokenized) -> dic
         pattern = r"(Answer:(?!.*Answer:).*)"
         matches = re.finditer(pattern, generated_string, re.DOTALL)
 
-        answer_positions = [(match.start(), min(match.end(), len(generated_string))) for match in matches]        assert len(answer_positions) == 1, "fill_position_stats: More than one answer found"
+        answer_positions = [(match.start(), min(match.end(), len(generated_string))) for match in matches]
+        assert len(answer_positions) == 1, "fill_position_stats: More than one answer found"
         answer_position = answer_positions[0]
         assert answer_position[1] == len(
             generated_string), "fill_position_stats: Answer doesn't span the last generated token"
