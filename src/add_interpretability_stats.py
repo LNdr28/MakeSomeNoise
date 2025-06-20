@@ -63,15 +63,18 @@ def get_avg_answers_number(entries: List[dict]):
 
 
 def pretty_print_stats(entry_stats: dict,
-                       skip_keys=['answer_attention_to_gold_tokens', 'gt_answer_attention_to_gold_tokens']):
+                       skip_keys=None):
+    if skip_keys is None:
+        skip_keys = ['answer_attention_to_gold_tokens', 'gt_answer_attention_to_gold_tokens']
     print("{")
     for key, value in entry_stats.items():
+        to_print = value
         if skip_keys and key in skip_keys:
-            continue
+            to_print = "skipped"
         if isinstance(value, list):
-            print(f"  {key} (size: {len(value)}): {value}")
+            print(f"  {key} (size: {len(value)}): {to_print}")
         else:
-            print(f"  {key}: {value}")
+            print(f"  {key}: {to_print}")
     print("}")
 
 
@@ -416,7 +419,7 @@ def fill_internal_activations(entry: dict, entry_stats: dict, entry_output_token
 
 
 ###################################### All stats together ######################################
-def collect_all_stats_for_entry(entry: dict, gold_doc_position: int, tokenizer, llm, offset_normalizer) -> dict:
+def collect_all_stats_for_entry(entry: dict, gold_doc_position: int, tokenizer, llm, offset_normalizer, to_normalize_attentions: bool) -> dict:
     entry_stats = init_stats(entry, gold_doc_position)
 
     entry_output_tokenized = tokenize(tokenizer=tokenizer,
@@ -434,7 +437,7 @@ def collect_all_stats_for_entry(entry: dict, gold_doc_position: int, tokenizer, 
         )
 
     entry_stats = fill_confidence_scores(entry=entry, entry_stats=entry_stats, entry_output_tokenized=entry_output_tokenized, entry_model_outputs=entry_model_outputs)
-    entry_stats = fill_attention_scores(entry=entry, entry_stats=entry_stats, entry_output_tokenized=entry_output_tokenized, entry_model_outputs=entry_model_outputs)
+    entry_stats = fill_attention_scores(entry=entry, entry_stats=entry_stats, entry_output_tokenized=entry_output_tokenized, entry_model_outputs=entry_model_outputs, to_normalize=to_normalize_attentions)
     entry_stats = fill_averaged_attentions(entry=entry, entry_stats=entry_stats, entry_output_tokenized=entry_output_tokenized, delete_attentions=True)
     entry_stats = fill_internal_activations(entry=entry, entry_stats=entry_stats, entry_output_tokenized=entry_output_tokenized, entry_model_outputs=entry_model_outputs)
 
@@ -444,10 +447,12 @@ def collect_all_stats_for_entry(entry: dict, gold_doc_position: int, tokenizer, 
 
     return entry_stats
 
-def collect_interpretability_stats(input_file: str, gold_doc_position: int, save_interval: int = 100):
+
+def collect_interpretability_stats(input_file: str, gold_doc_position: int, save_interval: int = 100, to_normalize_attentions: bool = False):
     # auto-generate output filename
     name, ext = os.path.splitext(input_file)
-    output_file = f"{name}_interpr_stats{ext}"
+    suffix = '_normalized' if to_normalize_attentions else ''
+    output_file = f"{name}_interpr_stats{suffix}{ext}"
 
     with open(input_file, 'r') as f:
         data = json.load(f)
@@ -465,7 +470,7 @@ def collect_interpretability_stats(input_file: str, gold_doc_position: int, save
 
     for i in pbar:
         try:
-            stats = collect_all_stats_for_entry(entry=data[i], gold_doc_position=gold_doc_position, tokenizer=tokenizer, llm=llm, offset_normalizer=offset_normalizer)
+            stats = collect_all_stats_for_entry(entry=data[i], gold_doc_position=gold_doc_position, tokenizer=tokenizer, llm=llm, offset_normalizer=offset_normalizer, to_normalize_attentions=to_normalize_attentions)
             results.append(stats)
         except Exception as e:
             error_result = {
@@ -508,15 +513,18 @@ def save_json(data, filename):
 
 def get_args():
     parser = argparse.ArgumentParser(description="Collect interpretability statistics")
-    parser.add_argument("input_file", type=str,
+    parser.add_argument("--input_file", type=str,
                         help="Path to the input file (an extended .json)")
-    parser.add_argument("gold_doc_position", type=int,
+    parser.add_argument("--gold_doc_position", type=int,
                         help="Position of the gold document")
-    parser.add_argument("save_interval", type=int, default=100,
+    parser.add_argument("--save_interval", type=int, default=100,
                         help="Interval for saving results")
 
     parser.add_argument("--seed", type=int, default=10,
                         help="Random seed (default: 10)")
+
+    parser.add_argument("--to_normalize_attention", type=bool, default=False,
+                        help="Whether to normalize attention scores before summing a part of them or not")
 
     args = parser.parse_args()
     return args
@@ -525,4 +533,4 @@ def get_args():
 if __name__ == "__main__":
     args = get_args()
     seed_everything(args.seed)
-    collect_interpretability_stats(args.input_file, args.gold_doc_position, args.save_interval)
+    collect_interpretability_stats(args.input_file, args.gold_doc_position, args.save_interval, args.to_normalize_attention)
