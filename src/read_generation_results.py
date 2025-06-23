@@ -79,10 +79,10 @@ def read_generation_results_only_query(file_path: str, df: pd.DataFrame) -> List
         file_data = json.load(fin)
 
         for example in file_data:
-            example_ids = example['example_id']
-            queries = example['query']
-            prompts = example['prompt']
-            generated_answers = example['generated_answer']
+            example_ids = example['example_id'] if type(example['example_id']) == list else [example['example_id']]
+            queries = example['query'] if type(example['query']) == list else [example['query']]
+            prompts = example['prompt'] if type(example['prompt']) == list else [example['prompt']]
+            generated_answers = example['generated_answer'] if type(example['generated_answer']) == list else [example['generated_answer']]
 
             for i in range(len(example_ids)):
                 example_id = example_ids[i]
@@ -136,6 +136,9 @@ def load_pickle_files(directory: str, filename_prefix: str) -> pd.DataFrame:
     data_df = pd.DataFrame(data_list)
     if 'only_query' in directory:
         data_df['example_id'] = data_df['example_id'].apply(lambda x: x.tolist())
+    elif 'reranker' in directory:
+        data_df['example_id'] = data_df['example_id'].apply(lambda x: [int(x)])
+
     else:
         data_df['document_indices'] = data_df['document_indices'].apply(convert_tensors)
 
@@ -163,6 +166,16 @@ def save_data_to_json(data_df: pd.DataFrame, directory: str, filename_prefix: st
 
 
 def get_classic_path(args):
+    gold_pos = args.gold_position
+    rand_str = "_rand" if args.use_random else ""
+    answerless_str = "_answerless" if args.get_documents_without_answer else ""
+    adore_str = "_adore" if args.use_adore else ""
+
+    filename_prefix = f'numdoc{args.num_doc}_gold_at{gold_pos}{rand_str}{answerless_str}{adore_str}_info_'
+    return filename_prefix
+
+
+def get_reranker_path(args):
     gold_pos = args.gold_position
     rand_str = "_rand" if args.use_random else ""
     answerless_str = "_answerless" if args.get_documents_without_answer else ""
@@ -234,7 +247,7 @@ def parse_arguments():
 
     args = parser.parse_args()
 
-    if not args.prompt_type in ['classic', 'mixed', 'multi_corpus', 'only_query']:
+    if not args.prompt_type in ['classic', 'mixed', 'multi_corpus', 'only_query', 'reranker']:
         parser.error("Invalid prompt type. Must be one of ['classic', 'mixed', 'multi_corpus', 'only_query']")
 
     return args
@@ -249,6 +262,10 @@ def main():
         retriever_str = "adore/" if args.use_adore else "contriever/"
         args.num_doc = args.num_documents_in_context
         filename_prefix = get_classic_path(args)
+    elif prompt_type == 'reranker':
+        retriever_str = ""
+        args.num_doc = args.num_documents_in_context
+        filename_prefix = get_reranker_path(args)
     elif prompt_type == 'mixed':
         retriever_str = "bm25/" if args.use_bm25 else "contriever/"
         args.num_doc = args.num_retrieved_documents + args.num_random_documents
@@ -305,7 +322,7 @@ def main():
     else:
         df = pd.read_json('data/10k_train_dataset.json')
 
-    if 'only_query' in directory:
+    if 'only_query' in directory or 'reranker' in directory:
         results = read_generation_results_only_query(data_path, df)
     else:
         results = read_generation_results(data_path, df)
