@@ -41,6 +41,8 @@ def parse_arguments():
     parser.add_argument('--load_full_corpus', type=str2bool, help='Load the full corpus', default=True)    
     parser.add_argument('--use_bm25', type=str2bool, help="Use the retrieved documents from BM25", default=False)
     parser.add_argument('--gold_position', type=int, help='The (0-indexed) position of the gold document in the context', default=None)
+    parser.add_argument('--custom_random_docs', type=str, help='(Optional) path to a pkl file containing random documents to be used in context (can be used to use ex mid score bm25 noise as rand docs/noise). If activated need to load full corpus. Overwrites given random results paths.')
+    parser.add_argument('--custom_retrieved_docs', type=str, help='(Optional) path to pkl file containing custom search results. Can be used to generate results with search results apart from predefined ones.')
     parser.add_argument('--num_retrieved_documents', type=int, help='Number of retrieved documents in the context')
     parser.add_argument('--num_random_documents', type=int, help='Number of random documents in the context')
     parser.add_argument('--put_retrieved_first', type=str2bool, help='Put the retrieved documents first in the context', default=False)
@@ -86,13 +88,25 @@ def load_corpus(
 
 
 def load_search_results(args: argparse.Namespace) -> List[Tuple[List[int], List[float]]]:
-    random_results_path = info[args.split]['random_results_path']
+    if args.custom_random_docs:
+        random_results_path = args.custom_random_docs
+        assert args.load_full_corpus, "If using custom random docs need to load full corpus"
+        assert os.path.exists(random_results_path), f"File {random_results_path} does not exist"
+        assert os.path.isfile(random_results_path), f"File {random_results_path} is not a file"
+    else:
+        random_results_path = info[args.split]['random_results_path']
+    # read from loaded random path (loading noise)
     random_search_results = read_pickle(random_results_path)
 
-    if args.use_bm25:
+    if args.custom_retrieved_docs:
+        search_results_path = args.custom_retrieved_docs
+        assert os.path.exists(search_results_path), f"File {search_results_path} does not exist"
+        assert os.path.isfile(search_results_path), f"File {search_results_path} is not a file"
+    elif args.use_bm25:
         search_results_path = info[args.split]['bm25_search_results_path']
     else:
         search_results_path = info[args.split]['contriever_search_results_path']
+    # load search results from a retriever from path
     retriever_search_results = read_pickle(search_results_path)
 
     return retriever_search_results, random_search_results

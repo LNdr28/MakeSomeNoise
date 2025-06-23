@@ -92,7 +92,6 @@ def get_low_score_noise_documents(scores: List[float], k_docs: int) -> tuple[nda
     """
     Retrieve k low-score noise documents. Return their scores and indices in the corpus.
     """
-    # Calculate the threshold for the bottom 20% scores
     threshold = np.quantile(scores, LOW_SCORE_PERCENTILE)
 
     # Get indices of documents with scores below the threshold
@@ -114,7 +113,6 @@ def get_mid_score_noise_documents(scores: List[float], k_docs: int) -> tuple[
     """
     Retrieve k low-score noise documents. Return their scores and indices in the corpus.
     """
-    # Calculate the threshold for the bottom 20% scores
     min_score = np.min(scores)
     max_score = np.max(scores)
     full_range = max_score - min_score

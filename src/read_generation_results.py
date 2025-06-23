@@ -11,7 +11,7 @@ import wandb
 
 from utils import str2bool
 from normalize_answers import *
-from src.logging import load_env, init_wandb, JobType, Dataset, Retriever, RunConfig, Tag
+from src.logging_util import load_env, init_wandb, JobType, Dataset, Retriever, RunConfig, Tag
 
 
 
