@@ -50,5 +50,49 @@ The analysis notebook is located in `src/noise_interpretability_analysis.ipynb`,
 
 ## Retrieving Noise
 
+To replicate the noise retrieval experiments there are two steps (given that the subset of the NQ training set is already prepared):
+1. For each document in the corpus, noise is retrieved and stored to a file. This is done for each noise separately (Random Noise, Low Score Noise, Mid Score Noise)
+2. Given the "pre-calculated" noise documents from step 1, we can now run benchmarks.
+
+### Commands for retrieving Noise
+
+For the Random Noise setting, which is the baseline we use the same random noise as Cuconasu et al. The respective file is at `data/10k_random_results_at60.pkl`.
+To retrieve the noise for Low Score and Mid Score setting we implemented the script `src/generate_search_results_bm25.py`. In the following, we provide the commands used to generate the noise:
+
+Generate Low Score Noise (10 noise documents for each query)
+```bash
+python src/generate_search_results_bm25.py --op_mode=low_score_noise
+```
+
+Generate Mid Score Noise (10 noise documents for each query)
+```bash
+python src/generate_search_results_bm25.py --op_mode=mid_score_noise
+```
+
+### Commands to run benchmarks
+
+Given the three files containing the noise documents for each sample in the train dataset, one can now run the Benchmarks with the help of the following script: `example_scripts/run_generation_gold_doc_custom_search_res.sh`
+It contains the following command that can be modified to replicate the settings listed in our report:
+
+```bash
+python src/generate_answers_llm.py \
+    --output_dir data/gen_res \
+    --llm_id meta-llama/Llama-2-7b-chat-hf \
+    --model_max_length 4096 \
+    --load_full_corpus True \
+    --search_results data/search_results/bm25_mid_score_noise_10k_train_dataset_search_results_at10.pkl \
+    --gold_position 0 \
+    --num_documents_in_context 2 \
+    --get_documents_without_answer False \
+    --batch_size 1 \
+    --save_every 250
+```
+
+The interesting variables to change for the experiments are:
+1. `gold_position`: the position of the gold document in the context. 
+2. `num_documents_in_context`: to overall number of documents in the context (noise documents and gold document)
+3. `llm_id`: huggingface tag of the LLm to use for the benchmark
+
 
 ## Re-ranking Noise
+
