@@ -45,8 +45,8 @@ However, searching with normalized text finds more matches but returns indices r
 3. Preserve the exact character positions needed to extract ground truth answers
 
 The output files of `src/add_interpretability_stats.py` are then used for the interpretability analysis. 
-Note that we already provide these files at [ETH Polybox](https://polybox.ethz.ch/index.php/s/Lr4NLQDP7BNbYQH) for easier replication. 
-To analysis notebook is located in `src/noise_interpretability_analysis.ipynb`, and is shared together with cell outputs to showcase generated charts, that are also saved in the Polybox.
+Note that we already provide these files at [ETH Polybox](https://polybox.ethz.ch/index.php/s/Lr4NLQDP7BNbYQH) for easier replication of our experiments. Just put the files under `interpretability-anaysis-data` from Polybox to `data/csnlp` folder of this repository; this should allow for a smooth run of the analysis.
+The analysis notebook is located in `src/noise_interpretability_analysis.ipynb`, and is shared together with cell outputs to showcase generated charts, that are also saved in the Polybox.
 
 ## Retrieving Noise
 
