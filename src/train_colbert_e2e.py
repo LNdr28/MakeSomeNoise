@@ -1,27 +1,22 @@
 import argparse
 import os
-import time
 import pickle
-from typing import List
 
 from src.normalize_answers import *
 
 import torch
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
-import torch.distributed as dist
 from tqdm import tqdm
-from transformers import get_linear_schedule_with_warmup
 
 from ColBERTmain.colbert.infra import ColBERTConfig, Run
 from ColBERTmain.colbert.modeling.reranker.electra import ElectraReranker
-from ColBERTmain.colbert.training.rerank_batcher import RerankBatcher
 from ColBERTmain.colbert.training.training import set_bert_grad
 from ColBERTmain.colbert.utils.amp import MixedPrecisionManager
 from ColBERTmain.colbert.modeling.reranker.tokenizer import RerankerTokenizer
 from src.generate_search_results_bm25 import initialize_bm25_retriever, compute_bm25_search_results_for_one_query
 from src.llm import LLM
-from src.prompt_dataset import PromptDataset, RerankerDataset
+from src.prompt_dataset import  RerankerDataset
 from src.utils import str2bool, read_corpus_json, read_corpus_with_contriever
 
 device = torch.device(f"cuda:0" if torch.cuda.is_available() else "cpu")
@@ -89,9 +84,9 @@ def initialize_dataset_and_loader(
     return reranker_dataloader
 
 def read_corpus_with_random():
-    full_to_subset_path = "data/mappings/full_to_subset_random_at60_in_corpus.pkl"
-    subset_to_full_path = "data/mappings/subset_to_full_random_at60_in_corpus.pkl"
-    corpus_path = "data/processed/corpus_with_random_at60.json"
+    full_to_subset_path = "../data/mappings/full_to_subset_random_at60_in_corpus.pkl"
+    subset_to_full_path = "../data/mappings/subset_to_full_random_at60_in_corpus.pkl"
+    corpus_path = "../data/processed/corpus_with_random_at60.json"
     return read_subset_corupus_with_map(
         full_to_subset_path,
         subset_to_full_path,
@@ -100,19 +95,15 @@ def read_corpus_with_random():
 
 
 def load_corpus(args: argparse.Namespace) :
-    # Load the corpus
     if args.load_full_corpus:
         print("Loading full corpus from JSON file...")
-        corpus = read_corpus_json('data/corpus.json')
+        corpus = read_corpus_json('../data/corpus.json')
         return corpus, None
 
-    # if args.use_random:
-    #     corpus, full_to_subset_idx_map = read_corpus_with_random()
-    if args.use_adore: #elif
+    if args.use_adore:
         print("Loading corpus with ADORE search results...")
         corpus, full_to_subset_idx_map = read_corpus_with_adore()
     else:
-        # Corpus with documents from Contriever
         print("Loading corpus with Contriever search results...")
         corpus, full_to_subset_idx_map = read_corpus_with_contriever()
 
@@ -133,8 +124,8 @@ def read_subset_corupus_with_map(
     return corpus, full_to_subset_idx_map
 
 def read_corpus_with_adore():
-    full_to_subset_path = "data/mappings/full_to_subset_adore_at200_in_corpus.pkl"
-    subset_to_full_path = "data/mappings/subset_to_full_adore_at200_in_corpus.pkl"
+    full_to_subset_path = "../data/mappings/full_to_subset_adore_at200_in_corpus.pkl"
+    subset_to_full_path = "../data/mappings/subset_to_full_adore_at200_in_corpus.pkl"
     corpus_path = "data/processed/corpus_with_adore_at200.json"
     return read_subset_corupus_with_map(
         full_to_subset_path,
@@ -142,9 +133,8 @@ def read_corpus_with_adore():
         corpus_path
     )
 
-def save_model(args, colbert, optimizer, idx, savepath=None):
+def save_model(colbert, idx, savepath=None):
     checkpoints_path = savepath or os.path.join(Run().path_, 'checkpoints')
-    name = None
     print(checkpoints_path)
 
     try:
@@ -163,11 +153,8 @@ def save_model(args, colbert, optimizer, idx, savepath=None):
     print(f"Saved checkpoint to {path_save}")
 
 
-def train(config: ColBERTConfig, triples, queries=None, collection=None):
-    # reader = RerankBatcher(config, triples, queries, collection, (0 if config.rank == -1 else config.rank), config.nranks)
-
+def train(config: ColBERTConfig):
     colbert = ElectraReranker.from_pretrained(config.checkpoint)
-
     colbert = colbert.to(device)
     colbert.train()
 
@@ -230,7 +217,6 @@ def train(config: ColBERTConfig, triples, queries=None, collection=None):
 
             best_passages = [passages[idx] for idx in sorted_indices[:args.num_documents_in_context-1]]
 
-
             best_passages.insert(args.gold_position, gold_document[i])
             documents_str = "\n".join(best_passages)
 
@@ -259,13 +245,12 @@ def train(config: ColBERTConfig, triples, queries=None, collection=None):
 
             reward = 1.0 if ans_match_after_norm else 0.0
             loss = -reward * log_probs.sum()
-            # loss.backward()
             amp.backward(loss)
         amp.step(colbert, optimizer, scheduler)
         if idx % 1000 == 0 and idx != 0:
-            save_model(config, colbert, optimizer, idx, savepath='/mnt/2tb-1/louis/colbert')
+            save_model(colbert, idx)
 
-    save_model(config, colbert, optimizer, -1, savepath='/mnt/2tb-1/louis/colbert')
+    save_model(colbert, -1)
 
 
 
@@ -297,8 +282,6 @@ def is_answer_in_text(text: str, answers: List[str]) -> bool:
     return False
 
 def flatten(L):
-    # return [x for y in L for x in y]
-
     result = []
     for _list in L:
         result += _list
@@ -316,5 +299,5 @@ if __name__ == "__main__":
     config.configure(triples=triples, queries=queries, collection=collection)
     config.configure(checkpoint=checkpoint)
 
-    train(config, triples, queries, collection)
+    train(config)
 

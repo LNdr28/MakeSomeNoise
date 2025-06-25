@@ -1,12 +1,7 @@
-import os
-import argparse
 import warnings
 from tqdm import tqdm
-from typing import Tuple, Dict, Optional
 
-import torch
 from torch.utils.data import DataLoader
-from transformers import PreTrainedTokenizer
 
 from ColBERTmain.colbert.infra import ColBERTConfig, Run
 from ColBERTmain.colbert.modeling.reranker.electra import ElectraReranker
@@ -14,8 +9,8 @@ from ColBERTmain.colbert.modeling.reranker.tokenizer import RerankerTokenizer
 from src.generate_search_results_bm25 import initialize_bm25_retriever, compute_bm25_search_results_for_one_query
 from src.llm import LLM
 from src.utils import *
-from src.prompt_dataset import PromptDataset, RerankerDataset
-from train_colbert_e2e import fake_collate_fn
+from src.prompt_dataset import RerankerDataset
+from src.train_colbert_e2e import fake_collate_fn
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 device = torch.device(f"cuda:0" if torch.cuda.is_available() else "cpu")
@@ -108,33 +103,24 @@ def generate_and_save(
         corpus,
         bert_tokenizer
 ):
-    # Info from arguments
     llm_id = args.llm_id
     num_doc = args.num_documents_in_context
     save_every = args.save_every
     gold_pos = args.gold_position
 
-    # Create the saving directory
     llm_folder = llm_id.split("/")[1] if '/' in llm_id else llm_id
     saving_dir = f"{args.output_dir}/{llm_folder}/train/reranker/{num_doc}_doc"
     if not os.path.exists(saving_dir):
         os.makedirs(saving_dir)
 
-
-    # MPT has a different answer string in the prompt
     answer_string_in_prompt = "### Response:" if 'mpt' in llm_id else "Answer:"
 
     k_docs = 100
 
     all_info = []
     for idx, batch in enumerate(tqdm(reranker_dataloader)):
-        # query = [b['query'] for b in batch]
-        # gold_document = [b['gold_document'] for b in batch]
-        # answers = [b['answers'] for b in batch]
-
         query = [batch['query']]
         gold_document = [batch['gold_document']]
-        answers = [batch['answers']]
 
         for i in range(len(query)):
             idxs, scores, _ = compute_bm25_search_results_for_one_query(bm25, op_mode=args.noise_type, query_text=query[i], k_docs=k_docs)
@@ -159,17 +145,15 @@ def generate_and_save(
             tokens_len = len(tokens)
             if tokens_len >= 4096:  #max_tokenized_length
                 print("Skipping example due to prompt length.")
-                continue  # Skip adding this example
+                continue
 
             generated_out = llm.generate(prompt, max_new_tokens=args.max_new_tokens)
-            output = generated_out[0]  # Assuming the output is a list of strings
+            output = generated_out[0]
 
 
             start = output.find(answer_string_in_prompt) + len(answer_string_in_prompt)
             response = output[start:].strip()
 
-            # batch[i]['generated_answer'] = response
-            # batch[i]['prompt'] = prompt
             batch['generated_answer'] = response
             batch['prompt'] = prompt
             all_info.append(batch)
@@ -190,7 +174,6 @@ def main():
         llm_id, device, quantization_bits=4,
         model_max_length=args.model_max_length
     )
-    tokenizer = llm.tokenizer
     print("LLM loaded")
 
     print("Loading reranker...")
